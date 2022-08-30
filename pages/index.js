@@ -1,37 +1,60 @@
-import {useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import Head from 'next/head'
-import Image from 'next/image'
-import {signInWithPhoneNumber, RecaptchaVerifier} from "firebase/auth";
+import {Form, Formik} from 'formik';
+import * as Yup from 'yup';
+import {signInWithPhoneNumber, RecaptchaVerifier,} from "firebase/auth";
 import {auth} from "../firebase/firebaseApp";
+
+
+const PhoneNumberSchema = Yup.object().shape({
+    phoneNumber: Yup.string()
+        .min(10, 'Too Short!')
+        .max(10, 'Too Long!')
+        .required('Required'),
+});
+
+const OTPSchema = Yup.object().shape({
+    otp: Yup.string()
+        .min(6, 'Too Short!')
+        .max(6, 'Too Long!')
+        .required('Required'),
+});
 
 export default function Home() {
 
-    const [phoneNumber, setPhoneNumber] = useState('')
+    //const recaptchaRef = useRef(null);
+    const [recaptcha, setRecaptcha] = useState(null)
     const [confirmation, setConfirmation] = useState(null)
 
-    const [otp, setOTP] = useState('')
+    useEffect(() => {
+        const verifier = new RecaptchaVerifier('recaptcha-container', {
+                'size': 'invisible'
+            },
+            auth);
+        if (!recaptcha) {
+            console.log(verifier.verify().then(() => setRecaptcha(verifier)))
+        }
+        return () => {
+            verifier.clear()
+        }
+    }, [])
 
     function setupRecaptcha(number) {
-
-        // const recaptchaVerifier =  new RecaptchaVerifier('sign-in-button', {
-        //     'size': 'invisible',
-        //     'callback': (response) => {
-        //         // reCAPTCHA solved, allow signInWithPhoneNumber.
-        //         return signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier)
-        //     }
-        // }, auth);
-        const recaptchaVerifier = new RecaptchaVerifier('recaptcha-container', {},
-            auth)
-        recaptchaVerifier.render()
-        return signInWithPhoneNumber(auth, '+91' + number, recaptchaVerifier)
+        return signInWithPhoneNumber(auth, '+91' + number, recaptcha)
     }
 
-    async function handleGetOTP() {
-        const resp = await setupRecaptcha(phoneNumber)
-        setConfirmation(resp)
+    async function handleGetOTP(phoneNumber) {
+        console.log(phoneNumber)
+        try {
+            const resp = await setupRecaptcha(phoneNumber)
+            console.log(resp)
+            setConfirmation(resp)
+        } catch (e) {
+            setConfirmation({})
+        }
     }
 
-    async function handleVerifyOTP() {
+    async function handleVerifyOTP(otp) {
         const resp = await confirmation.confirm(otp)
         console.log(resp)
     }
@@ -46,18 +69,60 @@ export default function Home() {
             </Head>
 
             <main className={"main"}>
-                <div>
-                    <label>Phone Number</label>
-                    <input type={"tel"} value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)}/>
-                    <button onClick={handleGetOTP}>Get OTP</button>
-                </div>
-                <div id={"recaptcha-container"}/>
-                <div>
-                    <label>OTP</label>
-                    <input type={"number"} value={otp} onChange={e => setOTP(e.target.value)}/>
-                    <button onClick={handleVerifyOTP}>Verify OTP</button>
-                </div>
-                <Image src="/vercel.svg" alt="Vercel Logo" width={72} height={16}/>
+                <Formik
+                    initialValues={{
+                        phoneNumber: ''
+                    }}
+                    onSubmit={values => {
+                        const {phoneNumber} = values
+                        handleGetOTP(phoneNumber)
+                    }}
+                    validationSchema={PhoneNumberSchema}
+                >{
+                    ({values, errors, touched, handleChange, handleBlur, isValid}) => (
+                        <Form>
+                            <label>Phone Number</label>
+                            <input type={"tel"}
+                                   name="phoneNumber"
+                                   onChange={handleChange}
+                                   onBlur={handleBlur}
+                                   value={values.phoneNumber}
+                            />
+                            {errors.phoneNumber && touched.phoneNumber ? <div className={"text-orange-300-500 mt-2"}>{errors.phoneNumber}</div> : null}
+                            <button type="submit" disabled={!isValid}>Get OTP</button>
+                        </Form>
+                    )
+
+                }
+                </Formik>
+                <div id={"recaptcha-container"} className={"flex justify-center w-full"}/>
+                {confirmation &&
+                    <Formik
+                        initialValues={{
+                            otp: ''
+                        }}
+                        onSubmit={values => {
+                            const {otp} = values
+                            handleVerifyOTP(otp)
+                        }}
+                        validationSchema={OTPSchema}
+                    >{
+                        ({values, errors, touched, handleChange, handleBlur, isValid}) => (
+                            <Form>
+                                <label>OTP</label>
+                                <input type={"text"}
+                                       name="otp"
+                                       onChange={handleChange}
+                                       onBlur={handleBlur}
+                                       value={values.otp}
+                                />
+                                {errors.otp && touched.otp ? <div>{errors.otp}</div> : null}
+                                <button type={"submit"} disabled={!isValid}>Verify OTP</button>
+                            </Form>
+                        )
+                    }
+                    </Formik>
+                }
             </main>
         </div>
     )
